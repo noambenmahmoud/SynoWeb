@@ -1,0 +1,80 @@
+{
+  "project_name": "Synology Cloud Dashboard - NAS File Explorer",
+  "theme": "LIGHT",
+  "archetype": "4 (Swiss & High-Contrast) + The Crystal/Apple Variant",
+  "design_philosophy": "A premium, calm, modern and clean ('épuré') personal file manager in French. Inspired by native Mac Finder and Apple Photos, translated to the web. Focuses on frictionless navigation, glassmorphism ('crystal clarity'), high-contrast typography, and organic bento-grid layouts. It should feel like a luxurious extension of the user's personal memories and work.",
+  "colors": {
+    "background_main": "bg-slate-50",
+    "surface_sidebar": "bg-white",
+    "surface_card": "bg-white",
+    "surface_glass": "bg-white/70 backdrop-blur-xl backdrop-saturate-150",
+    "border_subtle": "border-slate-200/60",
+    "text_primary": "text-slate-900",
+    "text_secondary": "text-slate-500",
+    "accent_primary": "bg-slate-900 text-white",
+    "accent_hover": "hover:bg-slate-800 hover:text-white",
+    "focus_ring": "focus:ring-2 focus:ring-slate-900/20"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Manrope",
+    "h1_hero": "text-4xl sm:text-5xl font-semibold tracking-tight text-slate-900",
+    "h2_section": "text-2xl sm:text-3xl font-medium tracking-tight text-slate-900",
+    "h3_card": "text-lg sm:text-xl font-medium tracking-tight text-slate-800",
+    "body_text": "text-base leading-relaxed text-slate-600",
+    "labels_overline": "text-xs font-semibold uppercase tracking-[0.2em] text-slate-400",
+    "banned_fonts": ["Inter", "Roboto", "Open Sans", "Syne"]
+  },
+  "layout_and_spacing": {
+    "global_spacing": "Generous. Use p-6, p-8, p-12 for containers.",
+    "dashboard_grid": "Bento-style. grid-cols-1 md:grid-cols-4 lg:grid-cols-12 gap-6.",
+    "gallery_grid": "Dense masonry or strict grid without gaps or 2px gaps, mimicking Apple Photos. e.g., grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6.",
+    "border_radii": "rounded-2xl or rounded-3xl for main containers to give a soft, premium feel. rounded-xl for inner elements."
+  },
+  "components": {
+    "sidebar": "Fixed left sidebar. Solid bg-white or bg-white/70 glassmorphism. Right border 1px border-slate-200. Navigation links should be rounded-lg with icon + text, hover:bg-slate-100 transition-colors.",
+    "top_navigation": "Sticky top bar with AI search. Use Crystal Glassmorphism (bg-white/80 backdrop-blur-xl border-b border-slate-200/50) so files slide beautifully underneath.",
+    "cards_and_files": "Soft Neumorphic approach. Flat bg-white with 1px border-slate-200/50. Hover state: slight lift (-translate-y-1) and soft shadow (shadow-[0_8px_30px_rgb(0,0,0,0.06)]).",
+    "buttons": "Primary actions (Login, Upload) use solid slate-900. Secondary use bg-white border border-slate-200. No generic blue unless explicitly requested.",
+    "search_bar": "AI-powered natural language search (Recherche IA). Pill-shaped (rounded-full), bg-slate-100 border-none focus-within:ring-2 focus-within:ring-slate-900/20. Add a subtle shimmer or sparkle icon to denote AI.",
+    "video_player": "Sleek inline HTML5 player with rounded-2xl corners. Custom minimalist controls if possible.",
+    "file_details_panel": "Right-side sliding panel or floating glassmorphic card for file metadata (size, mod date, type).",
+    "shadcn_overrides": "Use Shadcn (.js versions). Remove the harsh borders from Card components. Customize Dialog for the photo lightbox preview (transparent overlay bg-black/80, no visible dialog borders). Use Command for the AI search dropdown."
+  },
+  "motion_and_interactions": {
+    "hover_states": "Every clickable element MUST have a hover state.",
+    "image_gallery": "Images must have overflow-hidden. On hover, the inner img gets scale-[1.03] duration-500 ease-out.",
+    "page_transitions": "Use Framer Motion for smooth fade-in and slide-up (y: 10, opacity: 0 -> y: 0, opacity: 1) on mount."
+  },
+  "accessibility_and_testing": {
+    "contrast": "Verify text-slate-500 on slate-50 background. If it fails, use text-slate-600.",
+    "focus": "Keyboard navigation must have visible focus rings.",
+    "testing_attributes": "Add data-testid to ALL interactive elements (e.g., data-testid='login-submit-btn', data-testid='sidebar-nav-photos', data-testid='ai-search-input')."
+  },
+  "icons_library": {
+    "name": "lucide-react",
+    "instructions": "Use consistent stroke-width (1.5). For folders, use the filled variant or subtle colored stroke (like slate-800)."
+  },
+  "language": "French (fr) - Ensure all UI copy (e.g., 'Photos', 'Vidéos', 'Documents', 'Recherche IA', 'Connexion', 'Récents') is natively localized in French.",
+  "media": [
+    {
+      "category": "gallery_demo_photos",
+      "description": "Landscape, nature, and family photography for photo gallery demo.",
+      "urls": [
+        "https://images.unsplash.com/photo-1670180909157-78094afdad01?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHw0fHxsYW5kc2NhcGUlMjBwaG90b2dyYXBoeSUyMG1vdW50YWluc3xlbnwwfHx8fDE3NzgxMjM5NzV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1603611847484-f4009220576f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwxfHxsYW5kc2NhcGUlMjBwaG90b2dyYXBoeSUyMG1vdW50YWluc3xlbnwwfHx8fDE3NzgxMjM5NzV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1681347189603-18318e629c75?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwyfHxsYW5kc2NhcGUlMjBwaG90b2dyYXBoeSUyMG1vdW50YWluc3xlbnwwfHx8fDE3NzgxMjM5NzV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1659342618742-9158429c63a7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2ODh8MHwxfHNlYXJjaHwzfHxsYW5kc2NhcGUlMjBwaG90b2dyYXBoeSUyMG1vdW50YWluc3xlbnwwfHx8fDE3NzgxMjM5NzV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1552249352-02a0817a2d95?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwyfHxzdW1tZXIlMjB2YWNhdGlvbiUyMGZhbWlseXxlbnwwfHx8fDE3NzgyNzIxMTV8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1690187256229-e1fe4b82f9f6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwzfHxzdW1tZXIlMjB2YWNhdGlvbiUyMGZhbWlseXxlbnwwfHx8fDE3NzgyNzIxMTV8MA&ixlib=rb-4.1.0&q=85"
+      ]
+    },
+    {
+      "category": "video_thumbnails",
+      "description": "Thumbnails for video files in the dashboard.",
+      "urls": [
+        "https://images.unsplash.com/photo-1542105726-7982ea78fb59?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNDR8MHwxfHNlYXJjaHwxfHxzdW1tZXIlMjB2YWNhdGlvbiUyMGZhbWlseXxlbnwwfHx8fDE3NzgyNzIxMTV8MA&ixlib=rb-4.1.0&q=85"
+      ]
+    }
+  ]
+}
