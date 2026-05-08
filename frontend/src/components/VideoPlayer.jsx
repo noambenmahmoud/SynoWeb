@@ -1,4 +1,4 @@
-import { Dialog, DialogContent } from "./ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { X } from "lucide-react";
 import { formatBytes, formatDate } from "../lib/format";
 
@@ -11,6 +11,8 @@ export default function VideoPlayer({ video, onClose }) {
         className="max-w-5xl bg-slate-950/95 border-none p-0 overflow-hidden rounded-3xl"
         data-testid="video-player-modal"
       >
+        <DialogTitle className="sr-only">{video.name}</DialogTitle>
+        <DialogDescription className="sr-only">Lecteur vidéo</DialogDescription>
         <div className="relative">
           <video
             src={video.url}

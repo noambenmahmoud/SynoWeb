@@ -1,4 +1,4 @@
-import { Dialog, DialogContent } from "./ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Download, X, Star } from "lucide-react";
 import { formatBytes, formatDate } from "../lib/format";
 import { Button } from "./ui/button";
@@ -12,6 +12,8 @@ export default function PhotoLightbox({ photo, onClose, onFavorite, isFavorite }
         className="max-w-6xl bg-slate-950/95 border-none p-0 overflow-hidden rounded-3xl"
         data-testid="photo-lightbox"
       >
+        <DialogTitle className="sr-only">{photo.name}</DialogTitle>
+        <DialogDescription className="sr-only">Aperçu plein écran de la photo</DialogDescription>
         <div className="relative">
           <img
             src={photo.url}
