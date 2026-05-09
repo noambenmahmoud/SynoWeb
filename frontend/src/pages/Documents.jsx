@@ -31,21 +31,38 @@ export default function Documents() {
   const [path, setPath] = useState("");
   const [data, setData] = useState({ folders: [], documents: [] });
   const [loading, setLoading] = useState(true);
+  const [autoEntered, setAutoEntered] = useState(false);
 
   const load = useCallback(async (p) => {
     setLoading(true);
     try {
       const browse = await files.browse(p || "");
       setData({ folders: browse.folders || [], documents: browse.documents || [] });
+      return browse;
     } catch {
       toast.error("Impossible de charger ce dossier");
       setData({ folders: [], documents: [] });
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(path); }, [path, load]);
+  useEffect(() => {
+    (async () => {
+      const browse = await load(path);
+      if (!path && !autoEntered && browse?.folders?.length) {
+        const re = /^(doc|docs|documents?|fichiers?|files?)$/i;
+        const match = browse.folders.find((f) => re.test(f.name));
+        if (match) {
+          setAutoEntered(true);
+          setPath(match.path);
+        } else {
+          setAutoEntered(true);
+        }
+      }
+    })();
+  }, [path, load, autoEntered]);
 
   const subtitle = path
     ? `${data.folders.length} sous-dossier${data.folders.length > 1 ? "s" : ""} • ${data.documents.length} document${data.documents.length > 1 ? "s" : ""}`

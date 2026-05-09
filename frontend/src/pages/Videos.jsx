@@ -32,21 +32,38 @@ export default function Videos() {
   const [data, setData] = useState({ folders: [], videos: [] });
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
+  const [autoEntered, setAutoEntered] = useState(false);
 
   const load = useCallback(async (p) => {
     setLoading(true);
     try {
       const browse = await files.browse(p || "");
       setData({ folders: browse.folders || [], videos: browse.videos || [] });
+      return browse;
     } catch {
       toast.error("Impossible de charger ce dossier");
       setData({ folders: [], videos: [] });
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(path); }, [path, load]);
+  useEffect(() => {
+    (async () => {
+      const browse = await load(path);
+      if (!path && !autoEntered && browse?.folders?.length) {
+        const re = /^(video|videos|movies?|films?|cinema|series?)$/i;
+        const match = browse.folders.find((f) => re.test(f.name));
+        if (match) {
+          setAutoEntered(true);
+          setPath(match.path);
+        } else {
+          setAutoEntered(true);
+        }
+      }
+    })();
+  }, [path, load, autoEntered]);
 
   const openVideo = (v) => setActive({ ...v, _src: resolveMediaUrl(v), _poster: resolveThumb(v) });
 

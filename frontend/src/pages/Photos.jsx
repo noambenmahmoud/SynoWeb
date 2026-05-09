@@ -42,6 +42,7 @@ export default function Photos() {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
   const [favIds, setFavIds] = useState(new Set());
+  const [autoEntered, setAutoEntered] = useState(false);
 
   const load = useCallback(async (p) => {
     setLoading(true);
@@ -49,15 +50,32 @@ export default function Photos() {
       const [browse, fav] = await Promise.all([files.browse(p || ""), files.favorites()]);
       setData({ folders: browse.folders || [], photos: browse.photos || [] });
       setFavIds(new Set((fav.items || []).map((x) => x.file_id)));
+      return browse;
     } catch {
       toast.error("Impossible de charger ce dossier");
       setData({ folders: [], photos: [] });
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(path); }, [path, load]);
+  // Initial load + auto-enter the first "Photos"-like share
+  useEffect(() => {
+    (async () => {
+      const browse = await load(path);
+      if (!path && !autoEntered && browse?.folders?.length) {
+        const re = /^(photo|photos|images?|pictures?)$/i;
+        const match = browse.folders.find((f) => re.test(f.name));
+        if (match) {
+          setAutoEntered(true);
+          setPath(match.path);
+        } else {
+          setAutoEntered(true);
+        }
+      }
+    })();
+  }, [path, load, autoEntered]);
 
   const openPhoto = (p) => {
     setActive({
