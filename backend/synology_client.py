@@ -333,11 +333,58 @@ class SynologyClient:
         return resp
 
     async def storage_info(self) -> dict:
+        """Try multiple Synology APIs to retrieve volume sizes. Returns
+        {total_bytes, used_bytes, available_bytes, volumes:[...]}."""
+        # 1) SYNO.Core.Storage.Volume (admin DSM 6+)
         try:
             data = await self._get(
                 "/webapi/entry.cgi",
-                {"api": "SYNO.Core.System", "version": "1", "method": "info"},
+                {"api": "SYNO.Core.Storage.Volume", "version": "1",
+                 "method": "list", "offset": "0", "limit": "10"},
             )
-            return data
+            vols = data.get("volumes", []) or []
+            volumes = []
+            total = used = 0
+            for v in vols:
+                t = int(v.get("size", {}).get("total", 0) or 0)
+                u = int(v.get("size", {}).get("used", 0) or 0)
+                total += t
+                used += u
+                volumes.append({"name": v.get("id") or v.get("display_name") or "volume",
+                                "total": t, "used": u})
+            if total > 0:
+                return {"total_bytes": total, "used_bytes": used,
+                        "available_bytes": max(total - used, 0), "volumes": volumes}
         except Exception:
-            return {}
+            pass
+
+        # 2) Fallback: aggregate share-level volume_status (any user can read)
+        try:
+            data = await self._get(
+                "/webapi/entry.cgi",
+                {"api": "SYNO.FileStation.List", "version": "2",
+                 "method": "list_share",
+                 "additional": '["volume_status"]', "limit": "1000"},
+            )
+            shares = data.get("shares", []) or []
+            seen: dict[str, dict] = {}
+            for s in shares:
+                vs = (s.get("additional") or {}).get("volume_status") or {}
+                vol_path = s.get("path", "")
+                vol_root = "/" + vol_path.lstrip("/").split("/")[0] if vol_path else ""
+                if not vol_root:
+                    continue
+                t = int(vs.get("totalspace", 0) or 0)
+                free = int(vs.get("freespace", 0) or 0)
+                if t and vol_root not in seen:
+                    seen[vol_root] = {"total": t, "free": free}
+            if seen:
+                volumes = [{"name": k, "total": v["total"], "used": v["total"] - v["free"]}
+                           for k, v in seen.items()]
+                total = sum(v["total"] for v in volumes)
+                used = sum(v["used"] for v in volumes)
+                return {"total_bytes": total, "used_bytes": used,
+                        "available_bytes": max(total - used, 0), "volumes": volumes}
+        except Exception:
+            pass
+        return {}

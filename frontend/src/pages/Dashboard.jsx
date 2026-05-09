@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Layout from "../components/Layout";
-import { files } from "../lib/api";
+import { files, resolveThumb } from "../lib/api";
 import { formatBytes, formatDate } from "../lib/format";
 import { Image, Video, FileText, HardDrive, ArrowRight, Sparkles } from "lucide-react";
 
@@ -35,7 +35,10 @@ export default function Dashboard() {
       .catch(() => {});
   }, []);
 
-  const usedPct = storage ? Math.round((storage.used_bytes / storage.total_bytes) * 100) : 0;
+  const total = storage?.total_bytes || 0;
+  const used = storage?.used_bytes || 0;
+  const usedPct = total > 0 ? Math.round((used / total) * 100) : 0;
+  const volumes = storage?.volumes || [];
 
   return (
     <Layout title="Bonjour 👋" subtitle="Voici un aperçu de votre espace personnel.">
@@ -47,32 +50,42 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.25em] text-slate-400">
               <HardDrive className="h-4 w-4" /> Stockage
             </div>
-            <div className="mt-6 flex items-baseline gap-3">
-              <span className="font-heading text-5xl font-semibold tracking-tight">{storage ? formatBytes(storage.used_bytes) : "—"}</span>
-              <span className="text-slate-400">/ {storage ? formatBytes(storage.total_bytes) : "—"}</span>
+            <div className="mt-6 flex items-baseline gap-3 flex-wrap">
+              <span className="font-heading text-5xl font-semibold tracking-tight">{total ? formatBytes(used) : "—"}</span>
+              <span className="text-slate-400">/ {total ? formatBytes(total) : "—"}</span>
             </div>
             <div className="mt-5 h-2 rounded-full bg-white/10 overflow-hidden">
               <div className="h-full bg-amber-300 rounded-full transition-all" style={{ width: `${usedPct}%` }} />
             </div>
-            <div className="mt-2 text-sm text-slate-400">{usedPct}% utilisé</div>
+            <div className="mt-2 text-sm text-slate-400">
+              {total ? `${usedPct}% utilisé` : "Statistiques de stockage indisponibles avec ce compte"}
+            </div>
 
-            {storage?.by_type && (
-              <div className="grid grid-cols-4 gap-4 mt-8">
-                {Object.entries(storage.by_type).map(([k, v]) => (
-                  <div key={k} className="rounded-2xl bg-white/5 p-4">
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 capitalize">{k === "photos" ? "Photos" : k === "videos" ? "Vidéos" : k === "documents" ? "Documents" : "Autre"}</div>
-                    <div className="mt-1 font-heading text-lg font-medium">{formatBytes(v)}</div>
-                  </div>
-                ))}
+            {volumes.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
+                {volumes.slice(0, 6).map((v) => {
+                  const vTotal = v.total || 0;
+                  const vUsed = v.used || 0;
+                  const vPct = vTotal ? Math.round((vUsed / vTotal) * 100) : 0;
+                  return (
+                    <div key={v.name} className="rounded-2xl bg-white/5 p-4">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-slate-400 truncate">{v.name}</div>
+                      <div className="mt-1 font-heading text-lg font-medium">{formatBytes(vUsed)} <span className="text-slate-500 text-sm font-normal">/ {formatBytes(vTotal)}</span></div>
+                      <div className="mt-2 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-amber-300 rounded-full" style={{ width: `${vPct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
         <div className="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <StatCard icon={Image} label="Photos" value={photos.length} sub="dans votre bibliothèque" accent="bg-rose-50 text-rose-500" />
-          <StatCard icon={Video} label="Vidéos" value={videos.length} sub="à regarder" accent="bg-violet-50 text-violet-500" />
-          <StatCard icon={FileText} label="Documents" value={docs.length} sub="indexés" accent="bg-emerald-50 text-emerald-600" />
+          <StatCard icon={Image} label="Photos" value={photos.length} sub="indexées" accent="bg-rose-50 text-rose-500" />
+          <StatCard icon={Video} label="Vidéos" value={videos.length} sub="prêtes à regarder" accent="bg-violet-50 text-violet-500" />
+          <StatCard icon={FileText} label="Documents" value={docs.length} sub="trouvés" accent="bg-emerald-50 text-emerald-600" />
           <Link to="/search?q=photos%20de%20l%27%C3%A9t%C3%A9" className="rounded-3xl bg-amber-50 border border-amber-100 p-6 hover:-translate-y-0.5 transition-all group" data-testid="suggest-search-card">
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
               <Sparkles className="h-5 w-5" />
@@ -87,47 +100,51 @@ export default function Dashboard() {
       </section>
 
       {/* Recent photos */}
-      <section className="mt-12">
-        <div className="flex items-end justify-between mb-5">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Récents</div>
-            <h2 className="font-heading text-2xl font-medium tracking-tight text-slate-900 mt-1">Photos récentes</h2>
-          </div>
-          <Link to="/photos" data-testid="see-all-photos" className="text-sm text-slate-700 hover:text-slate-900 inline-flex items-center gap-1">
-            Tout voir <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {photos.slice(0, 6).map((p) => (
-            <Link key={p.id} to="/photos" className="aspect-square rounded-2xl overflow-hidden bg-slate-100 group">
-              <img src={p.thumbnail} alt={p.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500" />
+      {photos.length > 0 && (
+        <section className="mt-12">
+          <div className="flex items-end justify-between mb-5">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Récents</div>
+              <h2 className="font-heading text-2xl font-medium tracking-tight text-slate-900 mt-1">Photos récentes</h2>
+            </div>
+            <Link to="/photos" data-testid="see-all-photos" className="text-sm text-slate-700 hover:text-slate-900 inline-flex items-center gap-1">
+              Tout voir <ArrowRight className="h-4 w-4" />
             </Link>
-          ))}
-        </div>
-      </section>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {photos.slice(0, 6).map((p) => (
+              <Link key={p.id} to="/photos" className="aspect-square rounded-2xl overflow-hidden bg-slate-100 group">
+                <img src={resolveThumb(p, "medium")} alt={p.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Recent docs */}
-      <section className="mt-12 mb-4">
-        <div className="flex items-end justify-between mb-5">
-          <h2 className="font-heading text-2xl font-medium tracking-tight text-slate-900">Documents récents</h2>
-          <Link to="/documents" className="text-sm text-slate-700 hover:text-slate-900 inline-flex items-center gap-1">
-            Tout voir <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {docs.slice(0, 4).map((d) => (
-            <div key={d.id} className="rounded-2xl bg-white border border-slate-200/70 p-4 flex items-center gap-4 hover:-translate-y-0.5 transition-all">
-              <div className="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center text-xs font-semibold uppercase text-slate-600">
-                {d.ext}
+      {docs.length > 0 && (
+        <section className="mt-12 mb-4">
+          <div className="flex items-end justify-between mb-5">
+            <h2 className="font-heading text-2xl font-medium tracking-tight text-slate-900">Documents récents</h2>
+            <Link to="/documents" className="text-sm text-slate-700 hover:text-slate-900 inline-flex items-center gap-1">
+              Tout voir <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {docs.slice(0, 4).map((d) => (
+              <div key={d.id} className="rounded-2xl bg-white border border-slate-200/70 p-4 flex items-center gap-4 hover:-translate-y-0.5 transition-all">
+                <div className="h-12 w-12 rounded-xl bg-slate-100 flex items-center justify-center text-xs font-semibold uppercase text-slate-600">
+                  {d.ext}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-slate-900 truncate">{d.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{d.folder} • {formatDate(d.modified)} • {formatBytes(d.size)}</div>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="font-medium text-slate-900 truncate">{d.name}</div>
-                <div className="text-xs text-slate-500 mt-0.5">{d.folder} • {formatDate(d.modified)} • {formatBytes(d.size)}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      )}
     </Layout>
   );
 }

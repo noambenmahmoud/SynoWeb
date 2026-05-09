@@ -4,6 +4,8 @@ import { formatBytes, formatDate } from "../lib/format";
 
 export default function VideoPlayer({ video, onClose }) {
   if (!video) return null;
+  const src = video._src || video.url || "";
+  const poster = video._poster || video.poster || video.thumbnail || "";
   return (
     <Dialog open={!!video} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
@@ -15,9 +17,12 @@ export default function VideoPlayer({ video, onClose }) {
         <DialogDescription className="sr-only">Lecteur vidéo</DialogDescription>
         <div className="relative">
           <video
-            src={video.url}
+            src={src}
+            poster={poster}
             controls
             autoPlay
+            playsInline
+            preload="metadata"
             className="w-full max-h-[75vh] bg-black"
             data-testid="video-element"
           />

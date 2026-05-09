@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 
 export default function PhotoLightbox({ photo, onClose, onFavorite, isFavorite }) {
   if (!photo) return null;
+  const fullUrl = photo._full || photo.url || photo._thumb || "";
   return (
     <Dialog open={!!photo} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
@@ -16,7 +17,7 @@ export default function PhotoLightbox({ photo, onClose, onFavorite, isFavorite }
         <DialogDescription className="sr-only">Aperçu plein écran de la photo</DialogDescription>
         <div className="relative">
           <img
-            src={photo.url}
+            src={fullUrl}
             alt={photo.name}
             className="w-full max-h-[80vh] object-contain bg-black"
           />
@@ -48,7 +49,7 @@ export default function PhotoLightbox({ photo, onClose, onFavorite, isFavorite }
                 <Star className={`h-4 w-4 mr-1.5 ${isFavorite ? "fill-amber-400 text-amber-500" : ""}`} />
                 {isFavorite ? "Favori" : "Ajouter aux favoris"}
               </Button>
-              <a href={photo.url} target="_blank" rel="noreferrer" download>
+              <a href={fullUrl} target="_blank" rel="noreferrer" download>
                 <Button data-testid="lightbox-download-btn" className="rounded-full bg-slate-900 hover:bg-slate-800">
                   <Download className="h-4 w-4 mr-1.5" /> Télécharger
                 </Button>

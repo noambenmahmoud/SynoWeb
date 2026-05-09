@@ -20,6 +20,7 @@ from mock_data import (
 )
 from synology_client import SynologyClient, SynologyError
 from ai_search import parse_query
+from tmdb import fetch_posters
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -264,7 +265,12 @@ async def storage_info(authorization: Optional[str] = Header(None)):
     sess = get_session(authorization)
     if sess["demo"]:
         return DEMO_STORAGE
-    return DEMO_STORAGE  # Synology Core.System info often restricted; demo numbers as placeholder
+    client: SynologyClient = sess["client"]
+    info = await client.storage_info()
+    if not info:
+        # Couldn't read storage info — return zeros so the UI shows "—"
+        return {"total_bytes": 0, "used_bytes": 0, "available_bytes": 0, "volumes": []}
+    return info
 
 
 # ----- AI Search -----
@@ -290,21 +296,24 @@ async def ai_search(payload: SearchRequest, authorization: Optional[str] = Heade
         files = []
     items = []
     for f in files[:200]:
-        path = f.get("path", "")
         name = f.get("name", "")
         lower = name.lower()
-        ftype = "document"
-        if lower.endswith((".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif")):
+        if lower.endswith(PHOTO_EXTS):
             ftype = "photo"
-        elif lower.endswith((".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")):
+        elif lower.endswith(VIDEO_EXTS):
             ftype = "video"
-        items.append({
-            "id": path, "name": name, "type": ftype,
-            "thumbnail": f"/api/files/thumbnail?path={path}&size=medium" if ftype != "document" else "",
-            "size": f.get("additional", {}).get("size", 0),
-            "modified": _ts_to_iso(f.get("additional", {}).get("time", {}).get("mtime")),
-            "folder": "/".join(path.split("/")[:-1]),
-        })
+        else:
+            ftype = "document"
+        items.append(_format_file(f, ftype))
+    # Enrich any video result with TMDB poster
+    video_names = [it["name"] for it in items if it["type"] == "video"]
+    if video_names:
+        posters = await fetch_posters(video_names)
+        for it in items:
+            if it["type"] == "video":
+                p = posters.get(it["name"])
+                if p:
+                    it["poster"] = p
     return {"parsed": parsed, "items": items, "summary": parsed.get("summary", "")}
 
 

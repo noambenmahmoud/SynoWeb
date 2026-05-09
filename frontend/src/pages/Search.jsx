@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import Layout from "../components/Layout";
-import { files } from "../lib/api";
+import { files, resolveThumb, resolveMediaUrl } from "../lib/api";
 import PhotoLightbox from "../components/PhotoLightbox";
 import VideoPlayer from "../components/VideoPlayer";
 import DocumentIcon from "../components/DocumentIcon";
-import { Loader2, Sparkles, Image as ImageIcon, Video as VideoIcon, FileText } from "lucide-react";
+import { Loader2, Sparkles, Image as ImageIcon, Video as VideoIcon, FileText, Play } from "lucide-react";
 import { formatBytes, formatDate } from "../lib/format";
 
 export default function Search() {
@@ -75,8 +75,8 @@ export default function Search() {
               <h2 className="font-heading text-xl font-medium text-slate-900 mb-4">Photos</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
                 {photos.map((p) => (
-                  <button key={p.id} onClick={() => setActivePhoto(p)} className="aspect-square rounded-2xl overflow-hidden bg-slate-100 group">
-                    <img src={p.thumbnail} alt={p.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500" />
+                  <button key={p.id} onClick={() => setActivePhoto({ ...p, _thumb: resolveThumb(p, "medium"), _full: resolveMediaUrl(p) || resolveThumb(p, "large") })} className="aspect-square rounded-2xl overflow-hidden bg-slate-100 group">
+                    <img src={resolveThumb(p, "medium")} alt={p.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500" />
                   </button>
                 ))}
               </div>
@@ -86,18 +86,30 @@ export default function Search() {
           {videos.length > 0 && (
             <section className="mb-10">
               <h2 className="font-heading text-xl font-medium text-slate-900 mb-4">Vidéos</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {videos.map((v) => (
-                  <button key={v.id} onClick={() => setActiveVideo(v)} className="text-left rounded-2xl bg-white border border-slate-200/70 overflow-hidden group hover:-translate-y-0.5 transition-all">
-                    <div className="aspect-video bg-slate-900 overflow-hidden">
-                      <img src={v.thumbnail} alt={v.name} className="w-full h-full object-cover opacity-90 group-hover:opacity-100" />
-                    </div>
-                    <div className="p-4">
-                      <div className="font-medium text-slate-900 truncate">{v.name}</div>
-                      <div className="text-xs text-slate-500 mt-1">{v.folder} • {formatDate(v.modified)}</div>
-                    </div>
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5">
+                {videos.map((v) => {
+                  const cover = resolveThumb(v);
+                  return (
+                    <button key={v.id} onClick={() => setActiveVideo({ ...v, _src: resolveMediaUrl(v), _poster: cover })} className="text-left rounded-2xl overflow-hidden group hover:-translate-y-0.5 transition-all">
+                      <div className="aspect-[2/3] bg-slate-900 relative overflow-hidden rounded-2xl">
+                        {cover ? (
+                          <img src={cover} alt={v.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950">
+                            <VideoIcon className="h-10 w-10 text-slate-500" strokeWidth={1.5} />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/30 transition-opacity">
+                          <div className="h-12 w-12 rounded-full bg-white/95 flex items-center justify-center">
+                            <Play className="h-4 w-4 text-slate-900 ml-0.5" fill="currentColor" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-1 pt-2 text-sm font-medium text-slate-900 truncate">{v.name}</div>
+                      <div className="px-1 text-xs text-slate-500">{formatDate(v.modified)}</div>
+                    </button>
+                  );
+                })}
               </div>
             </section>
           )}

@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import Layout from "../components/Layout";
-import { files } from "../lib/api";
+import { files, resolveThumb } from "../lib/api";
 import { Loader2, Star } from "lucide-react";
-import { formatBytes, formatDate } from "../lib/format";
 import DocumentIcon from "../components/DocumentIcon";
 
 export default function Favorites() {
@@ -27,23 +26,26 @@ export default function Favorites() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {items.map((f) => (
-            <div key={f.file_id} className="rounded-2xl bg-white border border-slate-200/70 overflow-hidden group hover:-translate-y-0.5 transition-all">
-              {f.type === "photo" && f.thumbnail ? (
-                <div className="aspect-square bg-slate-100 overflow-hidden">
-                  <img src={f.thumbnail} alt={f.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500" />
+          {items.map((f) => {
+            const thumb = f.thumbnail || resolveThumb({ path: f.path }, "medium");
+            return (
+              <div key={f.file_id} className="rounded-2xl bg-white border border-slate-200/70 overflow-hidden group hover:-translate-y-0.5 transition-all">
+                {f.type === "photo" && thumb ? (
+                  <div className="aspect-square bg-slate-100 overflow-hidden">
+                    <img src={thumb} alt={f.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-500" />
+                  </div>
+                ) : (
+                  <div className="aspect-square bg-slate-50 flex items-center justify-center">
+                    <DocumentIcon ext={f.name?.split(".").pop()} className="h-14 w-14" />
+                  </div>
+                )}
+                <div className="p-3">
+                  <div className="text-sm font-medium text-slate-900 truncate">{f.name}</div>
+                  <div className="text-[11px] text-slate-500 truncate">{f.path}</div>
                 </div>
-              ) : (
-                <div className="aspect-square bg-slate-50 flex items-center justify-center">
-                  <DocumentIcon ext={f.name?.split(".").pop()} className="h-14 w-14" />
-                </div>
-              )}
-              <div className="p-3">
-                <div className="text-sm font-medium text-slate-900 truncate">{f.name}</div>
-                <div className="text-[11px] text-slate-500 truncate">{f.path}</div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Layout>
