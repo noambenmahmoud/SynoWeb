@@ -332,6 +332,17 @@ class SynologyClient:
         resp = await client.send(req, stream=True)
         return resp
 
+    async def system_info(self) -> dict:
+        """Retrieve hostname / DSM version. Returns {} on failure."""
+        try:
+            data = await self._get(
+                "/webapi/entry.cgi",
+                {"api": "SYNO.FileStation.Info", "version": "2", "method": "get"},
+            )
+            return data
+        except Exception:
+            return {}
+
     async def storage_info(self) -> dict:
         """Try multiple Synology APIs to retrieve volume sizes. Returns
         {total_bytes, used_bytes, available_bytes, volumes:[...]}."""

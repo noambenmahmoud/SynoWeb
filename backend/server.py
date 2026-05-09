@@ -319,6 +319,20 @@ async def browse_folder(
     return {"folders": folders, "photos": photos, "videos": videos, "documents": documents}
 
 
+@api.get("/system/info")
+async def system_info(authorization: Optional[str] = Header(None)):
+    sess = get_session(authorization)
+    if sess["demo"]:
+        return {"hostname": "SynoCloud Demo", "version": "DSM 7.x", "username": "demo"}
+    client: SynologyClient = sess["client"]
+    info = await client.system_info()
+    return {
+        "hostname": info.get("hostname", ""),
+        "version": info.get("version", ""),
+        "username": sess.get("username", ""),
+    }
+
+
 @api.get("/storage/info")
 async def storage_info(authorization: Optional[str] = Header(None)):
     sess = get_session(authorization)

@@ -19,19 +19,40 @@ _SEMAPHORE = asyncio.Semaphore(5)
 _BRACKETS = re.compile(r"[\[\(\{][^\[\]\(\)\{\}]*[\]\)\}]")
 _TV_EP = re.compile(r"\bs(\d{1,2})\s*[ex]\s*(\d{1,2})\b", re.I)
 _YEAR = re.compile(r"\b(19|20)\d{2}\b")
+# Multi-token quality tags that survive dash/dot → space replacement
+_QUALITY_2WORD = re.compile(
+    r"\b("
+    r"web\s*[-\s]*\s*dl|web\s*[-\s]*\s*rip|"
+    r"blu\s*[-\s]*\s*ray|dvd\s*[-\s]*\s*rip|"
+    r"hd\s*[-\s]*\s*rip|hd\s*[-\s]*\s*cam|hd\s*[-\s]*\s*ts|"
+    r"true\s*[-\s]*\s*french|"
+    r"10\s*[-\s]*\s*bit|"
+    r"h\s*[-\s]*\s*264|h\s*[-\s]*\s*265|"
+    r"5\s*\.?\s*1|7\s*\.?\s*1"
+    r")\b",
+    re.I,
+)
 _QUALITY = re.compile(
     r"\b("
-    r"480p|720p|1080p|2160p|4k|hdr|sdr|10bit|hevc|h\.?264|h\.?265|x264|x265|av1|aac|ac3|"
-    r"dts(-?hd)?|truehd|atmos|ddp|ddpa|dd5\.?1|"
-    r"bluray|blu-?ray|brrip|bdrip|webrip|web-?dl|dvdrip|hdrip|hdcam|hdtv|cam|"
-    r"french|truefrench|vff|vfq|vostfr|multi|subfrench|fr|en|"
-    r"repack|proper|remux|extended|directors?\.?cut|uncut|unrated|imax|"
-    r"ettv|rarbg|yify|fgt|cmrg|nogrp"
+    r"480p|720p|1080p|2160p|4k|hdr|sdr|10bit|hevc|h264|h265|x264|x265|av1|aac|ac3|"
+    r"dts(-?hd)?|truehd|atmos|ddp|ddpa|"
+    r"bluray|brrip|bdrip|webrip|webdl|dvdrip|hdrip|hdcam|hdtv|cam|"
+    r"french|truefrench|vff|vfq|vostfr|multi|subfrench|"
+    r"repack|proper|remux|extended|director'?s\.?cut|uncut|unrated|imax|"
+    r"ettv|rarbg|yify|fgt|cmrg|nogrp|amzn|nf|hulu|dsnp|atvp"
     r")\b",
     re.I,
 )
 _NON_ALNUM = re.compile(r"[._\-]+")
 _MULTI_SPACE = re.compile(r"\s+")
+_TRAILING_TOKENS = re.compile(r"\s+(?:vff|vfq|vostfr|multi|french|truefrench|web|dl|rip)+$", re.I)
+
+# Words that, on their own, mean nothing useful for a TMDB search
+GENERIC_TITLES = {
+    "", "movie", "video", "film", "films", "movies", "videos",
+    "episode", "media", "trailer", "untitled", "scene", "scenes",
+    "intro", "outro", "main", "titre",
+}
 
 
 def parse_filename(filename: str) -> dict:
@@ -51,9 +72,15 @@ def parse_filename(filename: str) -> dict:
 
     year_m = _YEAR.search(base)
     year = year_m.group(0) if year_m else None
+    base = _QUALITY_2WORD.sub(" ", base)
     base = _QUALITY.sub(" ", base)
     base = _YEAR.sub(" ", base)
     base = _MULTI_SPACE.sub(" ", base).strip()
+    # Strip trailing dangling quality tokens that survived
+    prev = None
+    while prev != base:
+        prev = base
+        base = _TRAILING_TOKENS.sub("", base).strip()
     return {"title": base, "is_tv": is_tv, "year": year, "season": season, "episode": episode}
 
 
@@ -72,14 +99,27 @@ async def fetch_poster(filename: str, folder_hint: str = "") -> Optional[str]:
     if not token:
         return None
 
-    # Build candidate parses: filename first, then folder name as fallback
+    # Build candidate parses. Filename takes priority; folder is used ONLY as
+    # a fallback when filename gives a generic / empty title. This avoids
+    # 50 movies all matching "video" and getting the same poster.
+    fn_info = parse_filename(filename) if filename else None
+    fd_info = parse_filename(folder_hint) if folder_hint else None
+
+    def _useful(info: Optional[dict]) -> bool:
+        if not info:
+            return False
+        t = (info.get("title") or "").strip().lower()
+        if len(t) < 3:
+            return False
+        if t in GENERIC_TITLES:
+            return False
+        return True
+
     candidates: list[dict] = []
-    if filename:
-        candidates.append(parse_filename(filename))
-    if folder_hint:
-        candidates.append(parse_filename(folder_hint))
-    # Filter out empty or too-short titles
-    candidates = [c for c in candidates if c["title"] and len(c["title"]) >= 2]
+    if _useful(fn_info):
+        candidates.append(fn_info)
+    elif _useful(fd_info):
+        candidates.append(fd_info)
     if not candidates:
         async with _LOCK:
             _CACHE[cache_key] = ""

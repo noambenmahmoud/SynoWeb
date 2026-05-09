@@ -55,16 +55,9 @@ export const files = {
   folders: () => api.get("/folders").then((r) => r.data),
   browse: (path) => api.get("/folders/browse", { params: { path } }).then((r) => r.data),
   storage: () => api.get("/storage/info").then((r) => r.data),
+  system: () => api.get("/system/info").then((r) => r.data),
   aiSearch: (query) => api.post("/search/ai", { query }).then((r) => r.data),
   favorites: () => api.get("/favorites").then((r) => r.data),
   addFavorite: (fav) => api.post("/favorites", fav).then((r) => r.data),
   removeFavorite: (id) => api.delete(`/favorites/${encodeURIComponent(id)}`).then((r) => r.data),
-  hlsStart: (path) => api.post("/files/hls/start", { path }).then((r) => r.data),
-  hlsStop: (sessionId) => api.post(`/files/hls/${sessionId}/stop`).then((r) => r.data),
 };
-
-export function hlsPlaylistUrl(playlistRelative) {
-  if (!playlistRelative) return "";
-  const sep = playlistRelative.includes("?") ? "&" : "?";
-  return `${BACKEND_URL}${playlistRelative}${sep}token=${tok()}`;
-}
