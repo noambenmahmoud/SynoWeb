@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Cloud, ServerCog, Sparkles, Loader2 } from "lucide-react";
+import { Cloud, ServerCog, Sparkles, Loader2, KeyRound } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -12,24 +12,46 @@ export default function Login() {
   const navigate = useNavigate();
   const [demo, setDemo] = useState(true);
   const [form, setForm] = useState({ nas_url: "", username: "", password: "" });
+  const [otp, setOtp] = useState("");
+  const [otpRequired, setOtpRequired] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorDetail, setErrorDetail] = useState("");
+  const otpInputRef = useRef(null);
 
   const submit = async (e, asDemo) => {
     e.preventDefault();
     setLoading(true);
     setErrorDetail("");
     try {
-      await login({ ...form, demo: asDemo ?? demo });
+      const data = await login({
+        ...form,
+        otp_code: otpRequired ? otp : "",
+        demo: asDemo ?? demo,
+      });
+      if (data?.requires_otp) {
+        setOtpRequired(true);
+        toast.info("Code à 6 chiffres requis");
+        // Focus OTP field on next tick
+        setTimeout(() => otpInputRef.current?.focus(), 50);
+        return;
+      }
       toast.success("Connecté");
       navigate("/");
     } catch (err) {
       const msg = err?.response?.data?.detail || "Échec de la connexion";
       setErrorDetail(msg);
       toast.error("Échec de la connexion");
+      // If OTP was wrong, keep the OTP field but clear it
+      if (otpRequired) setOtp("");
     } finally {
       setLoading(false);
     }
+  };
+
+  const cancelOtp = () => {
+    setOtpRequired(false);
+    setOtp("");
+    setErrorDetail("");
   };
 
   return (
@@ -92,7 +114,7 @@ export default function Login() {
           </div>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
-            {!demo && (
+            {!demo && !otpRequired && (
               <>
                 <div>
                   <Label htmlFor="nas_url" className="text-slate-700">URL du NAS</Label>
@@ -129,6 +151,43 @@ export default function Login() {
               </>
             )}
 
+            {!demo && otpRequired && (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                  <div className="flex items-center gap-2 text-amber-700 font-medium">
+                    <KeyRound className="h-4 w-4" />
+                    Vérification en 2 étapes
+                  </div>
+                  <p className="text-sm text-amber-800/90 mt-1.5 leading-relaxed">
+                    Ouvrez l'app <span className="font-medium">Synology Secure SignIn</span> sur votre téléphone et saisissez le code à 6 chiffres ci-dessous.
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="otp" className="text-slate-700">Code à 6 chiffres</Label>
+                  <Input
+                    id="otp"
+                    ref={otpInputRef}
+                    data-testid="otp-input"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    placeholder="000000"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="mt-1.5 h-12 text-center text-xl tracking-[0.5em] font-mono"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelOtp}
+                  data-testid="otp-cancel-btn"
+                  className="text-sm text-slate-500 hover:text-slate-900 underline-offset-4 hover:underline"
+                >
+                  ← Modifier les identifiants
+                </button>
+              </div>
+            )}
+
             {demo && (
               <div className="rounded-2xl border border-slate-200/70 bg-slate-50 p-5 text-sm text-slate-600 leading-relaxed">
                 Le <span className="font-medium text-slate-900">mode démo</span> charge un jeu de photos, vidéos et documents de démonstration, idéal pour découvrir l'interface avant de connecter votre NAS.
@@ -138,10 +197,18 @@ export default function Login() {
             <Button
               type="submit"
               data-testid="login-submit-btn"
-              disabled={loading}
+              disabled={loading || (otpRequired && otp.length !== 6)}
               className="w-full h-11 rounded-full bg-slate-900 hover:bg-slate-800 text-white font-medium"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : demo ? "Démarrer la démo" : "Se connecter"}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : demo ? (
+                "Démarrer la démo"
+              ) : otpRequired ? (
+                "Vérifier le code"
+              ) : (
+                "Se connecter"
+              )}
             </Button>
 
             {errorDetail && (

@@ -189,18 +189,20 @@ class SynologyClient:
             raise SynologyError(err.get("code", -1), str(err))
         return data.get("data", {})
 
-    async def login(self, username: str, password: str) -> str:
+    async def login(self, username: str, password: str, otp_code: str = "") -> str:
         # If user pasted a quickconnect.to URL, resolve it first
         await self._resolve_quickconnect()
         params = {
             "api": "SYNO.API.Auth",
-            "version": "3",
+            "version": "6",
             "method": "login",
             "account": username,
             "passwd": password,
             "session": "FileStation",
             "format": "sid",
         }
+        if otp_code:
+            params["otp_code"] = otp_code
         data = await self._get("/webapi/auth.cgi", params)
         sid = data.get("sid")
         if not sid:

@@ -41,14 +41,16 @@ class LoginRequest(BaseModel):
     nas_url: str = ""
     username: str = ""
     password: str = ""
+    otp_code: str = ""
     demo: bool = False
 
 
 class LoginResponse(BaseModel):
-    token: str
-    demo: bool
-    username: str
-    nas_url: str
+    token: Optional[str] = None
+    demo: bool = False
+    username: str = ""
+    nas_url: str = ""
+    requires_otp: bool = False
 
 
 class FavoriteIn(BaseModel):
@@ -118,10 +120,17 @@ async def login(payload: LoginRequest):
 
     client = SynologyClient(payload.nas_url)
     try:
-        await client.login(payload.username, payload.password)
+        await client.login(payload.username, payload.password, payload.otp_code)
     except SynologyError as e:
+        # 403 = OTP required, 404 = wrong OTP. Surface a structured response so
+        # the frontend can prompt for the 6-digit code.
+        if e.code == 403 and not payload.otp_code:
+            await client.close()
+            return LoginResponse(requires_otp=True, username=payload.username, nas_url=payload.nas_url)
+        await client.close()
         raise HTTPException(401, e.friendly())
     except Exception as e:
+        await client.close()
         raise HTTPException(502, f"Impossible de joindre le NAS: {e}")
 
     SESSIONS[token] = {

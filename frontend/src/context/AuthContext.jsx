@@ -24,6 +24,10 @@ export function AuthProvider({ children }) {
 
   const login = async (payload) => {
     const data = await authApi.login(payload);
+    if (data?.requires_otp) {
+      // Two-factor: don't persist a session yet, let the caller show OTP UI.
+      return data;
+    }
     localStorage.setItem("synocloud_token", data.token);
     setUser({ username: data.username, nas_url: data.nas_url, demo: data.demo });
     return data;
