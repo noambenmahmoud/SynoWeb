@@ -1,6 +1,7 @@
 """FastAPI server for the Synology Cloud Dashboard."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -21,6 +22,7 @@ from mock_data import (
 from synology_client import SynologyClient, SynologyError
 from ai_search import parse_query
 from tmdb import fetch_posters
+import hls as hls_mod
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -223,7 +225,7 @@ async def list_videos(authorization: Optional[str] = Header(None), folder: Optio
     files = await client.walk_files(roots, VIDEO_EXTS, max_files=200, max_depth=3)
     items = [_format_file(f, "video") for f in files]
     if items:
-        posters = await fetch_posters([it["name"] for it in items])
+        posters = await fetch_posters(items)
         for it in items:
             p = posters.get(it["name"])
             if p:
@@ -309,7 +311,7 @@ async def browse_folder(
         elif lname.endswith(DOC_EXTS):
             documents.append(_format_file(f, "document"))
     if videos:
-        posters = await fetch_posters([v["name"] for v in videos])
+        posters = await fetch_posters(videos)
         for v in videos:
             p = posters.get(v["name"])
             if p:
@@ -425,6 +427,93 @@ async def file_stream(
     return StreamingResponse(body_iter(), status_code=resp.status_code, headers=headers)
 
 
+# ----- HLS transcoding (audio re-encoded to AAC, video copied) -----
+@api.post("/files/hls/start")
+async def hls_start(
+    payload: dict,
+    authorization: Optional[str] = Header(None),
+):
+    sess = get_session(authorization)
+    if sess["demo"]:
+        raise HTTPException(400, "Mode démo : transcodage indisponible")
+    path = (payload or {}).get("path")
+    if not path:
+        raise HTTPException(400, "path manquant")
+    client: SynologyClient = sess["client"]
+    syno_url = client.download_url(path)
+    s = await hls_mod.start_session(syno_url)
+    pl = await hls_mod.wait_for_playlist(s, timeout_s=30)
+    if not pl:
+        await s.close()
+        hls_mod.SESSIONS.pop(s.id, None)
+        raise HTTPException(502, "Transcodage impossible (vérifiez le format du fichier)")
+    return {"session_id": s.id, "playlist_url": f"/api/files/hls/{s.id}/playlist.m3u8"}
+
+
+@api.get("/files/hls/{session_id}/playlist.m3u8")
+async def hls_playlist(
+    session_id: str,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None),
+):
+    _resolve_session_for_proxy(authorization, token)
+    s = hls_mod.SESSIONS.get(session_id)
+    if not s:
+        raise HTTPException(404, "Session HLS introuvable")
+    s.touch()
+    pl = s.work_dir / "playlist.m3u8"
+    if not pl.exists():
+        raise HTTPException(404, "Playlist non disponible")
+    text = pl.read_text()
+    rewritten: list[str] = []
+    auth_q = f"?token={token or ''}"
+    for line in text.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and line.endswith(".ts"):
+            rewritten.append(f"/api/files/hls/{session_id}/{line}{auth_q}")
+        else:
+            rewritten.append(line)
+    return Response("\n".join(rewritten) + "\n",
+                    media_type="application/vnd.apple.mpegurl",
+                    headers={"Cache-Control": "no-store"})
+
+
+@api.get("/files/hls/{session_id}/{seg_name}")
+async def hls_segment(
+    session_id: str,
+    seg_name: str,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None),
+):
+    _resolve_session_for_proxy(authorization, token)
+    s = hls_mod.SESSIONS.get(session_id)
+    if not s:
+        raise HTTPException(404)
+    if "/" in seg_name or ".." in seg_name:
+        raise HTTPException(400)
+    if not seg_name.endswith(".ts"):
+        raise HTTPException(404)
+    s.touch()
+    p = s.work_dir / seg_name
+    # Wait briefly if ffmpeg hasn't written this seg yet
+    for _ in range(20):
+        if p.exists() and p.stat().st_size > 0:
+            break
+        await asyncio.sleep(0.3)
+    if not p.exists():
+        raise HTTPException(404)
+    return Response(p.read_bytes(), media_type="video/mp2t")
+
+
+@api.post("/files/hls/{session_id}/stop")
+async def hls_stop(session_id: str, authorization: Optional[str] = Header(None)):
+    get_session(authorization)
+    s = hls_mod.SESSIONS.pop(session_id, None)
+    if s:
+        await s.close()
+    return {"ok": True}
+
+
 # ----- Favorites (persisted in Mongo) -----
 @api.get("/favorites")
 async def list_favorites(authorization: Optional[str] = Header(None)):
@@ -489,6 +578,7 @@ logger = logging.getLogger(__name__)
 
 @app.on_event("shutdown")
 async def shutdown():
+    await hls_mod.shutdown_all()
     for sess in list(SESSIONS.values()):
         if sess.get("client"):
             try:
@@ -496,3 +586,8 @@ async def shutdown():
             except Exception:
                 pass
     mongo_client.close()
+
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(hls_mod.gc_loop())
