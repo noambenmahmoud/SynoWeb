@@ -120,8 +120,7 @@ async def login(payload: LoginRequest):
     try:
         await client.login(payload.username, payload.password)
     except SynologyError as e:
-        # Forward a precise, French message
-        raise HTTPException(401, f"Échec de connexion Synology: {e} (code {e.code})")
+        raise HTTPException(401, e.friendly())
     except Exception as e:
         raise HTTPException(502, f"Impossible de joindre le NAS: {e}")
 

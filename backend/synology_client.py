@@ -19,10 +19,28 @@ from typing import Any, Optional, AsyncIterator
 import httpx
 
 
+SYNO_AUTH_ERRORS = {
+    400: "Identifiant ou mot de passe incorrect",
+    401: "Compte désactivé",
+    402: "Permission refusée",
+    403: "Vérification en 2 étapes requise (non encore prise en charge)",
+    404: "Code OTP invalide",
+    406: "Vérification en 2 étapes obligatoire",
+    407: "Adresse IP bloquée",
+    408: "Mot de passe expiré (changement requis)",
+    409: "Mot de passe doit être changé",
+}
+
+
 class SynologyError(Exception):
     def __init__(self, code: int, message: str = ""):
         super().__init__(message or f"Synology error {code}")
         self.code = code
+
+    def friendly(self) -> str:
+        if self.code in SYNO_AUTH_ERRORS:
+            return SYNO_AUTH_ERRORS[self.code]
+        return str(self) or f"Erreur Synology (code {self.code})"
 
 
 class SynologyClient:
@@ -55,12 +73,12 @@ class SynologyClient:
             return
         client = await self._ensure_client()
 
-        async def query(resolver_host: str) -> dict:
+        async def query(resolver_host: str, command: str = "request_tunnel") -> dict:
             r = await client.post(
                 f"https://{resolver_host}/Serv.php",
                 json={
                     "version": 1,
-                    "command": "get_server_info",
+                    "command": command,
                     "stop_when_error": "false",
                     "stop_when_success": "false",
                     "id": "dsm_portal_https",
@@ -70,7 +88,9 @@ class SynologyClient:
             )
             return r.json()
 
-        # 1) Hit global resolver, follow regional redirects
+        # 1) Hit global resolver, follow regional redirects.
+        # Use "request_tunnel" so the response also contains relay endpoints
+        # (used when direct ports aren't reachable — like mobile QuickConnect).
         resolvers_tried: set[str] = set()
         data: dict = {}
         try:
@@ -96,8 +116,18 @@ class SynologyClient:
         port = service.get("port") or 5001
         smartdns = data.get("smartdns") or {}
 
-        # Build ordered candidate list (most reliable first)
+        # Build ordered candidate list. Try the Synology RELAY first because
+        # most home NAS aren't directly exposed on the internet, so the mobile
+        # apps (and we) must tunnel via Synology's relay servers.
         candidates: list[str] = []
+        relay_dn = service.get("relay_dn")
+        relay_port = service.get("relay_port")
+        if relay_dn and relay_port:
+            candidates.append(f"https://{relay_dn}:{relay_port}")
+        relay_ip = service.get("relay_ip")
+        if relay_ip and relay_port:
+            candidates.append(f"https://{relay_ip}:{relay_port}")
+        # Then fall back to direct endpoints
         if smartdns.get("host"):
             candidates.append(f"https://{smartdns['host']}:{port}")
         ddns = server.get("ddns")
