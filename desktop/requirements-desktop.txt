@@ -1,0 +1,5 @@
+# Desktop-only Python dependencies (in addition to backend/requirements.txt)
+pywebview>=5.4
+pyinstaller>=6.10
+# Optional Windows webview engine (the runtime is auto-installed on Win10/11)
+# pywebview[edgechromium]

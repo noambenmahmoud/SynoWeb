@@ -11,8 +11,7 @@ from typing import Optional, Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, RedirectResponse, Response
-from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi.responses import StreamingResponse, RedirectResponse, Response, FileResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
 
@@ -22,15 +21,26 @@ from mock_data import (
 from synology_client import SynologyClient, SynologyError
 from ai_search import parse_query
 from tmdb import fetch_posters
+from local_storage import JsonFavoriteStore, MongoFavoriteStore
 import hls as hls_mod
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB
-mongo_url = os.environ["MONGO_URL"]
-mongo_client = AsyncIOMotorClient(mongo_url)
-db = mongo_client[os.environ["DB_NAME"]]
+LOCAL_MODE = os.environ.get("LOCAL_MODE") == "1"
+
+if LOCAL_MODE:
+    # Desktop: no MongoDB, store favorites in JSON in the user's data dir
+    DATA_DIR = Path(os.environ.get("DATA_DIR", str(Path.home() / ".synocloud")))
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    mongo_client = None
+    favorites_store = JsonFavoriteStore(DATA_DIR / "favorites.json")
+else:
+    from motor.motor_asyncio import AsyncIOMotorClient
+    mongo_url = os.environ["MONGO_URL"]
+    mongo_client = AsyncIOMotorClient(mongo_url)
+    db = mongo_client[os.environ["DB_NAME"]]
+    favorites_store = MongoFavoriteStore(db.favorites)
 
 app = FastAPI(title="Synology Cloud Dashboard")
 api = APIRouter(prefix="/api")
@@ -528,32 +538,25 @@ async def hls_stop(session_id: str, authorization: Optional[str] = Header(None))
     return {"ok": True}
 
 
-# ----- Favorites (persisted in Mongo) -----
+# ----- Favorites (JSON file in desktop mode, MongoDB in cloud mode) -----
 @api.get("/favorites")
 async def list_favorites(authorization: Optional[str] = Header(None)):
     sess = get_session(authorization)
-    docs = await db.favorites.find({"user": sess["username"]}, {"_id": 0}).to_list(500)
+    docs = await favorites_store.list(sess["username"])
     return {"items": docs}
 
 
 @api.post("/favorites")
 async def add_favorite(fav: FavoriteIn, authorization: Optional[str] = Header(None)):
     sess = get_session(authorization)
-    doc = fav.model_dump()
-    doc["user"] = sess["username"]
-    doc["created_at"] = datetime.now(timezone.utc).isoformat()
-    await db.favorites.update_one(
-        {"user": sess["username"], "file_id": fav.file_id},
-        {"$set": doc},
-        upsert=True,
-    )
+    await favorites_store.add(sess["username"], fav.model_dump())
     return {"ok": True}
 
 
 @api.delete("/favorites/{file_id}")
 async def remove_favorite(file_id: str, authorization: Optional[str] = Header(None)):
     sess = get_session(authorization)
-    await db.favorites.delete_one({"user": sess["username"], "file_id": file_id})
+    await favorites_store.remove(sess["username"], file_id)
     return {"ok": True}
 
 
@@ -586,6 +589,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# In desktop mode, serve the built React app from the same FastAPI server
+if LOCAL_MODE:
+    from fastapi.staticfiles import StaticFiles
+    frontend_build = Path(os.environ.get("FRONTEND_BUILD", str(ROOT_DIR.parent / "frontend" / "build")))
+    if frontend_build.exists():
+        static_dir = frontend_build / "static"
+        if static_dir.exists():
+            app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+        @app.get("/{full_path:path}")
+        async def serve_react(full_path: str):
+            # API routes are already handled by the api router (mounted earlier).
+            # This catch-all only serves the React SPA.
+            if full_path.startswith("api/") or full_path.startswith("static/"):
+                raise HTTPException(404)
+            target = frontend_build / full_path
+            if target.exists() and target.is_file():
+                return FileResponse(target)
+            return FileResponse(frontend_build / "index.html")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -599,7 +622,8 @@ async def shutdown():
                 await sess["client"].close()
             except Exception:
                 pass
-    mongo_client.close()
+    if mongo_client is not None:
+        mongo_client.close()
 
 
 @app.on_event("startup")
