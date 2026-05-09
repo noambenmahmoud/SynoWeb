@@ -13,17 +13,20 @@ export default function Login() {
   const [demo, setDemo] = useState(true);
   const [form, setForm] = useState({ nas_url: "", username: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [errorDetail, setErrorDetail] = useState("");
 
   const submit = async (e, asDemo) => {
     e.preventDefault();
     setLoading(true);
+    setErrorDetail("");
     try {
       await login({ ...form, demo: asDemo ?? demo });
       toast.success("Connecté");
       navigate("/");
     } catch (err) {
       const msg = err?.response?.data?.detail || "Échec de la connexion";
-      toast.error(msg);
+      setErrorDetail(msg);
+      toast.error("Échec de la connexion");
     } finally {
       setLoading(false);
     }
@@ -140,6 +143,12 @@ export default function Login() {
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : demo ? "Démarrer la démo" : "Se connecter"}
             </Button>
+
+            {errorDetail && (
+              <div data-testid="login-error" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 leading-relaxed whitespace-pre-line">
+                {errorDetail}
+              </div>
+            )}
           </form>
 
           <p className="text-xs text-slate-400 mt-6 leading-relaxed">
