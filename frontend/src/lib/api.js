@@ -53,6 +53,7 @@ export const files = {
   videos: (folder) => api.get("/videos", { params: { folder } }).then((r) => r.data),
   documents: (folder) => api.get("/documents", { params: { folder } }).then((r) => r.data),
   folders: () => api.get("/folders").then((r) => r.data),
+  browse: (path) => api.get("/folders/browse", { params: { path } }).then((r) => r.data),
   storage: () => api.get("/storage/info").then((r) => r.data),
   aiSearch: (query) => api.post("/search/ai", { query }).then((r) => r.data),
   favorites: () => api.get("/favorites").then((r) => r.data),

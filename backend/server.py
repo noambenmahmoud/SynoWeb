@@ -10,7 +10,7 @@ from typing import Optional, Literal
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.responses import StreamingResponse, RedirectResponse, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -183,23 +183,16 @@ def _format_file(f: dict, kind: str) -> dict:
     name = f.get("name", "")
     path = f.get("path", "")
     add = f.get("additional", {}) or {}
-    item = {
+    return {
         "id": path,
         "name": name,
         "type": kind,
+        "path": path,  # frontend builds /api/files/* URLs (with token) from this
         "size": add.get("size", 0),
         "modified": _ts_to_iso((add.get("time") or {}).get("mtime")),
         "folder": "/".join(path.split("/")[:-1]),
+        "ext": name.rsplit(".", 1)[-1].lower() if "." in name else "",
     }
-    if kind == "photo":
-        item["thumbnail"] = f"/api/files/thumbnail?path={path}&size=medium"
-        item["url"] = f"/api/files/thumbnail?path={path}&size=large"
-    elif kind == "video":
-        item["thumbnail"] = f"/api/files/thumbnail?path={path}&size=medium"
-        item["url"] = f"/api/files/stream?path={path}"
-    else:
-        item["ext"] = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    return item
 
 
 @api.get("/photos")
@@ -212,7 +205,7 @@ async def list_photos(authorization: Optional[str] = Header(None), folder: Optio
         return {"items": items, "count": len(items)}
     client: SynologyClient = sess["client"]
     roots = await _root_paths(client, folder)
-    files = await client.walk_files(roots, PHOTO_EXTS, max_files=500, max_depth=5)
+    files = await client.walk_files(roots, PHOTO_EXTS, max_files=200, max_depth=3)
     items = [_format_file(f, "photo") for f in files]
     return {"items": items, "count": len(items)}
 
@@ -227,8 +220,14 @@ async def list_videos(authorization: Optional[str] = Header(None), folder: Optio
         return {"items": items, "count": len(items)}
     client: SynologyClient = sess["client"]
     roots = await _root_paths(client, folder)
-    files = await client.walk_files(roots, VIDEO_EXTS, max_files=500, max_depth=5)
+    files = await client.walk_files(roots, VIDEO_EXTS, max_files=200, max_depth=3)
     items = [_format_file(f, "video") for f in files]
+    if items:
+        posters = await fetch_posters([it["name"] for it in items])
+        for it in items:
+            p = posters.get(it["name"])
+            if p:
+                it["poster"] = p
     return {"items": items, "count": len(items)}
 
 
@@ -242,7 +241,7 @@ async def list_documents(authorization: Optional[str] = Header(None), folder: Op
         return {"items": items, "count": len(items)}
     client: SynologyClient = sess["client"]
     roots = await _root_paths(client, folder)
-    files = await client.walk_files(roots, DOC_EXTS, max_files=500, max_depth=5)
+    files = await client.walk_files(roots, DOC_EXTS, max_files=200, max_depth=3)
     items = [_format_file(f, "document") for f in files]
     return {"items": items, "count": len(items)}
 
@@ -258,6 +257,64 @@ async def list_folders(authorization: Optional[str] = Header(None)):
     except SynologyError:
         shares = []
     return {"items": [{"path": s.get("path", ""), "name": s.get("name", ""), "count": 0} for s in shares]}
+
+
+@api.get("/folders/browse")
+async def browse_folder(
+    authorization: Optional[str] = Header(None),
+    path: Optional[str] = None,
+):
+    """Single-level listing for a path. If path is empty, lists all shares.
+    Returns {folders: [...], photos: [...], videos: [...], documents: [...]}.
+    Much faster than the recursive /photos /videos /documents endpoints."""
+    sess = get_session(authorization)
+    if sess["demo"]:
+        return {"folders": DEMO_FOLDERS, "photos": DEMO_PHOTOS, "videos": DEMO_VIDEOS, "documents": DEMO_DOCUMENTS}
+    client: SynologyClient = sess["client"]
+    folders: list[dict] = []
+    photos: list[dict] = []
+    videos: list[dict] = []
+    documents: list[dict] = []
+
+    if not path:
+        try:
+            shares = await client.list_shares()
+        except SynologyError:
+            shares = []
+        for s in shares:
+            sp = s.get("path", "")
+            if not sp:
+                continue
+            folders.append({"path": sp, "name": s.get("name", sp.lstrip("/")), "count": 0})
+        return {"folders": folders, "photos": [], "videos": [], "documents": []}
+
+    SKIP_DIRS = {"@eadir", "#recycle", "#snapshot", "@tmp", "@sharebin", "@s2s"}
+    try:
+        files = await client.list_folder(path, limit=2000)
+    except SynologyError:
+        files = []
+
+    for f in files:
+        name = f.get("name", "")
+        lname = name.lower()
+        if lname.startswith(".") or lname in SKIP_DIRS:
+            continue
+        if f.get("isdir"):
+            folders.append({"path": f.get("path", f"{path}/{name}"), "name": name, "count": 0})
+            continue
+        if lname.endswith(PHOTO_EXTS):
+            photos.append(_format_file(f, "photo"))
+        elif lname.endswith(VIDEO_EXTS):
+            videos.append(_format_file(f, "video"))
+        elif lname.endswith(DOC_EXTS):
+            documents.append(_format_file(f, "document"))
+    if videos:
+        posters = await fetch_posters([v["name"] for v in videos])
+        for v in videos:
+            p = posters.get(v["name"])
+            if p:
+                v["poster"] = p
+    return {"folders": folders, "photos": photos, "videos": videos, "documents": documents}
 
 
 @api.get("/storage/info")
@@ -327,10 +384,18 @@ async def file_thumbnail(
 ):
     sess = _resolve_session_for_proxy(authorization, token)
     if sess["demo"]:
-        # In demo we serve direct unsplash URLs from item objects; this proxy isn't used.
         raise HTTPException(404, "Mode démo : pas de proxy")
     client: SynologyClient = sess["client"]
-    return RedirectResponse(client.thumb_url(path, size=size))
+    httpc = await client._ensure_client()
+    url = client.thumb_url(path, size=size)
+    try:
+        resp = await httpc.get(url, follow_redirects=True, timeout=15.0)
+    except Exception:
+        raise HTTPException(502, "Vignette indisponible")
+    if resp.status_code != 200:
+        raise HTTPException(resp.status_code, "Vignette indisponible")
+    ct = resp.headers.get("content-type", "image/jpeg")
+    return Response(content=resp.content, media_type=ct, headers={"Cache-Control": "private, max-age=3600"})
 
 
 @api.get("/files/stream")
