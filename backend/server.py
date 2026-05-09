@@ -161,6 +161,46 @@ async def me(authorization: Optional[str] = Header(None)):
 
 
 # ----- Photos / Videos / Documents (demo-aware) -----
+
+PHOTO_EXTS = (".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp", ".gif", ".bmp", ".tiff", ".tif", ".raw", ".arw", ".cr2", ".nef", ".dng")
+VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".flv", ".mpg", ".mpeg", ".3gp", ".ts")
+DOC_EXTS = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".txt", ".md", ".csv", ".odt", ".ods", ".odp", ".rtf", ".epub")
+
+
+async def _root_paths(client: SynologyClient, folder: Optional[str]) -> list[str]:
+    """Resolve root paths to scan: either the given folder, or all shares."""
+    if folder:
+        return [folder]
+    try:
+        shares = await client.list_shares()
+    except SynologyError:
+        return []
+    return [s.get("path") for s in shares if s.get("path")]
+
+
+def _format_file(f: dict, kind: str) -> dict:
+    name = f.get("name", "")
+    path = f.get("path", "")
+    add = f.get("additional", {}) or {}
+    item = {
+        "id": path,
+        "name": name,
+        "type": kind,
+        "size": add.get("size", 0),
+        "modified": _ts_to_iso((add.get("time") or {}).get("mtime")),
+        "folder": "/".join(path.split("/")[:-1]),
+    }
+    if kind == "photo":
+        item["thumbnail"] = f"/api/files/thumbnail?path={path}&size=medium"
+        item["url"] = f"/api/files/thumbnail?path={path}&size=large"
+    elif kind == "video":
+        item["thumbnail"] = f"/api/files/thumbnail?path={path}&size=medium"
+        item["url"] = f"/api/files/stream?path={path}"
+    else:
+        item["ext"] = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return item
+
+
 @api.get("/photos")
 async def list_photos(authorization: Optional[str] = Header(None), folder: Optional[str] = None):
     sess = get_session(authorization)
@@ -169,31 +209,10 @@ async def list_photos(authorization: Optional[str] = Header(None), folder: Optio
         if folder:
             items = [p for p in items if p["folder"].startswith(folder)]
         return {"items": items, "count": len(items)}
-    # Real Synology: list common Photos share
     client: SynologyClient = sess["client"]
-    target = folder or "/photo"
-    try:
-        files = await client.list_folder(target)
-    except SynologyError:
-        files = []
-    items = []
-    for f in files:
-        if f.get("isdir"):
-            continue
-        name = f.get("name", "")
-        if not name.lower().endswith((".jpg", ".jpeg", ".png", ".heic", ".webp", ".gif")):
-            continue
-        path = f.get("path", "")
-        items.append({
-            "id": path,
-            "name": name,
-            "type": "photo",
-            "thumbnail": f"/api/files/thumbnail?path={path}&size=medium",
-            "url": f"/api/files/thumbnail?path={path}&size=large",
-            "size": f.get("additional", {}).get("size", 0),
-            "modified": _ts_to_iso(f.get("additional", {}).get("time", {}).get("mtime")),
-            "folder": "/".join(path.split("/")[:-1]),
-        })
+    roots = await _root_paths(client, folder)
+    files = await client.walk_files(roots, PHOTO_EXTS, max_files=500, max_depth=5)
+    items = [_format_file(f, "photo") for f in files]
     return {"items": items, "count": len(items)}
 
 
@@ -206,29 +225,9 @@ async def list_videos(authorization: Optional[str] = Header(None), folder: Optio
             items = [v for v in items if v["folder"].startswith(folder)]
         return {"items": items, "count": len(items)}
     client: SynologyClient = sess["client"]
-    target = folder or "/video"
-    try:
-        files = await client.list_folder(target)
-    except SynologyError:
-        files = []
-    items = []
-    for f in files:
-        if f.get("isdir"):
-            continue
-        name = f.get("name", "")
-        if not name.lower().endswith((".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")):
-            continue
-        path = f.get("path", "")
-        items.append({
-            "id": path,
-            "name": name,
-            "type": "video",
-            "thumbnail": f"/api/files/thumbnail?path={path}&size=medium",
-            "url": f"/api/files/stream?path={path}",
-            "size": f.get("additional", {}).get("size", 0),
-            "modified": _ts_to_iso(f.get("additional", {}).get("time", {}).get("mtime")),
-            "folder": "/".join(path.split("/")[:-1]),
-        })
+    roots = await _root_paths(client, folder)
+    files = await client.walk_files(roots, VIDEO_EXTS, max_files=500, max_depth=5)
+    items = [_format_file(f, "video") for f in files]
     return {"items": items, "count": len(items)}
 
 
@@ -241,29 +240,9 @@ async def list_documents(authorization: Optional[str] = Header(None), folder: Op
             items = [d for d in items if d["folder"].startswith(folder)]
         return {"items": items, "count": len(items)}
     client: SynologyClient = sess["client"]
-    target = folder or "/homes"
-    try:
-        files = await client.list_folder(target)
-    except SynologyError:
-        files = []
-    exts = (".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".txt", ".md", ".csv", ".odt")
-    items = []
-    for f in files:
-        if f.get("isdir"):
-            continue
-        name = f.get("name", "")
-        if not name.lower().endswith(exts):
-            continue
-        path = f.get("path", "")
-        items.append({
-            "id": path,
-            "name": name,
-            "type": "document",
-            "ext": name.rsplit(".", 1)[-1].lower(),
-            "size": f.get("additional", {}).get("size", 0),
-            "modified": _ts_to_iso(f.get("additional", {}).get("time", {}).get("mtime")),
-            "folder": "/".join(path.split("/")[:-1]),
-        })
+    roots = await _root_paths(client, folder)
+    files = await client.walk_files(roots, DOC_EXTS, max_files=500, max_depth=5)
+    items = [_format_file(f, "document") for f in files]
     return {"items": items, "count": len(items)}
 
 

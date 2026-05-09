@@ -141,7 +141,6 @@ class SynologyClient:
             raise SynologyError(-1, "QuickConnect n'a renvoyé aucun endpoint joignable")
 
         # Probe each candidate (short timeout — fail fast)
-        last_err: Exception | None = None
         for url in candidates:
             try:
                 ping = await client.get(
@@ -152,8 +151,7 @@ class SynologyClient:
                 if ping.status_code < 500:
                     self.base_url = url
                     return
-            except Exception as e:
-                last_err = e
+            except Exception:
                 continue
         endpoints_str = ", ".join(candidates)
         raise SynologyError(
@@ -243,6 +241,43 @@ class SynologyClient:
             },
         )
         return data.get("files", [])
+
+    async def walk_files(
+        self,
+        root_paths: list[str],
+        extensions: tuple[str, ...],
+        max_files: int = 500,
+        max_depth: int = 5,
+    ) -> list[dict]:
+        """Breadth-first walk through folders, returning files matching the
+        given lowercase extension tuple. Skips hidden/system folders."""
+        SKIP_DIRS = {"@eadir", "#recycle", "#snapshot", "@tmp", "@sharebin", "@s2s"}
+        results: list[dict] = []
+        queue: list[tuple[str, int]] = [(p, 0) for p in root_paths]
+        visited: set[str] = set()
+        while queue and len(results) < max_files:
+            path, depth = queue.pop(0)
+            if path in visited:
+                continue
+            visited.add(path)
+            try:
+                files = await self.list_folder(path, limit=1000)
+            except SynologyError:
+                continue
+            for f in files:
+                if len(results) >= max_files:
+                    break
+                name = f.get("name", "")
+                lname = name.lower()
+                if lname.startswith(".") or lname in SKIP_DIRS:
+                    continue
+                if f.get("isdir"):
+                    if depth < max_depth:
+                        queue.append((f.get("path", f"{path}/{name}"), depth + 1))
+                    continue
+                if lname.endswith(extensions):
+                    results.append(f)
+        return results
 
     async def search_files(self, folder_path: str, pattern: str, file_type: str = "all") -> list[dict]:
         # Use start_search + list (simpler: list with filetype + pattern via list endpoint)
